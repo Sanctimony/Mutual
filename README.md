@@ -1,17 +1,8 @@
-Codes accompanying the paper [Filling the Gap of Utterance-aware and Speaker-aware Representation for Multi-turn Dialogue](https://arxiv.org/pdf/2009.06504.pdf)
 
-## Instruction
-Our code is compatible with compatible with python 3.x so for all commands listed below python is `python3`.
+# Phrase-level Attention
+This branch includes the code that imeplements the phrase-level attention mechanism introduced in [Phrase-Based Attentions](https://arxiv.org/abs/1810.03444) on top of the original MDFN paper [Filling the Gap of Utterance-aware and Speaker-aware Representation for Multi-turn Dialogue](https://arxiv.org/pdf/2009.06504.pdf)
 
-We strongly suggest you to use `conda` to control the virtual environment.
-
-- Install requirements
-
-``
-pip install -r requirements.txt
-``
-
-- Train the model and predict.
+Run the following command to reproduce the reported results: 
 
 ```
 python MDFN/run_MDFN.py \
@@ -32,14 +23,4 @@ google/electra-large-discriminator \
 --local_rank -1
 ```
 
-## Reference
-If you use this code please cite our paper:
 
-```
-@inproceedings{liu2021filling,
-  title={Filling the Gap of Utterance-aware and Speaker-aware Representation for Multi-turn Dialogue},
-  author={Liu, Longxiang and Zhang, Zhuosheng and and Zhao, Hai and Zhou, Xi and Zhou, Xiang},
-  booktitle={The Thirty-Fifth AAAI Conference on Artificial Intelligence (AAAI-21)},
-  year={2021}
-}
-```
