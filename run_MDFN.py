@@ -304,12 +304,12 @@ class MuTualProcessor(DataProcessor):
                     label=truth))
         return examples
 
-def convert_examples_to_features(examples, label_list, max_seq_length, max_utterance_num,
+def convert_examples_to_features(examples, label_list, max_doc_length, max_opt_length, max_utterance_num,
                                  tokenizer, output_mode):
     """Loads a data file into a list of `InputBatch`s."""
 
     label_map = {label : i for i, label in enumerate(label_list)}
-
+    max_seq_length = max_doc_length + max_opt_length + 2
     features = []
     
     for (ex_index, example) in enumerate(examples):
@@ -327,8 +327,18 @@ def convert_examples_to_features(examples, label_list, max_seq_length, max_utter
             for idx, text in enumerate(text_b):
                 if len(text.strip()) > 0:
                     tokens_b.extend(tokenizer.tokenize(text) + ["[SEP]"])
-            
-            _truncate_seq_pair(tokens_a, tokens_b, max_seq_length - 2)
+
+            while True:
+                if len(tokens_a) > max_opt_length:
+                    tokens_a.pop()
+                else:
+                    break
+
+            while True:
+                if len(tokens_b) > max_doc_length:
+                    tokens_b.pop(0)
+                else:
+                    break
 
             tokens = ["[CLS]"]
             turn_ids = [0]
@@ -348,19 +358,24 @@ def convert_examples_to_features(examples, label_list, max_seq_length, max_utter
                 sep_pos.append(current_pos)
                 
             tokens += tokens_b
+            input_mask = [1] * len(tokens)
+            input_ids = tokenizer.convert_tokens_to_ids(tokens)
+            while len(tokens) < max_doc_length:
+                input_mask.append(0)
+                input_ids.append(0)
+                tokens.append("[SEP]")
+                turn_ids.append(len(sep_pos) - 1)
 
+            sep_pos[-1] = max_doc_length
             segment_ids = [0] * (len(tokens))
 
             tokens_a += ["[SEP]"]
             tokens += tokens_a
             segment_ids += [1] * (len(tokens_a))
-            
+            input_mask += [1] * len(tokens_a)
+            input_ids += tokenizer.convert_tokens_to_ids(tokens_a)
             turn_ids += [len(sep_pos)] * len(tokens_a) 
             sep_pos.append(len(tokens) - 1)
-
-            input_ids = tokenizer.convert_tokens_to_ids(tokens)
-
-            input_mask = [1] * len(input_ids)
 
             padding = [0] * (max_seq_length - len(input_ids))
             input_ids += padding
@@ -407,23 +422,6 @@ def convert_examples_to_features(examples, label_list, max_seq_length, max_utter
         )
 
     return features
-            
-
-def _truncate_seq_pair(tokens_a, tokens_b, max_length):
-    """Truncates a sequence pair in place to the maximum length."""
-
-    # This is a simple heuristic which will always truncate the longer sequence
-    # one token at a time. This makes more sense than truncating an equal percent
-    # of tokens from each, since if one sequence is very short then each token
-    # that's truncated likely contains more information than a longer sequence.
-    while True:
-        total_length = len(tokens_a) + len(tokens_b)
-        if total_length <= max_length:
-            break
-        if len(tokens_a) > len(tokens_b):
-            tokens_a.pop()
-        else:
-            tokens_b.pop(0)
 
 def get_p_at_n_in_m(pred, n, m, ind):
     pos_score = pred[ind]
@@ -638,10 +636,16 @@ def main():
                         default='../../cached_models',
                         type=str,
                         help="Where do you want to store the pre-trained models downloaded from s3")
-    parser.add_argument("--max_seq_length",
-                        default=128,
+    parser.add_argument("--max_doc_length",
+                        default=256,
                         type=int,
-                        help="The maximum total input sequence length after WordPiece tokenization. \n"
+                        help="The maximum doc sequence length after WordPiece tokenization. \n"
+                             "Sequences longer than this will be truncated, and sequences shorter \n"
+                             "than this will be padded.")
+    parser.add_argument("--max_opt_length",
+                        default=32,
+                        type=int,
+                        help="The maximum option sequence length after WordPiece tokenization. \n"
                              "Sequences longer than this will be truncated, and sequences shorter \n"
                              "than this will be padded.")
     parser.add_argument("--do_train",
@@ -801,6 +805,7 @@ def main():
                                                 do_lower_case=args.do_lower_case,
                                                 cache_dir=args.cache_dir if args.cache_dir else None)
     model = model_class.from_pretrained(args.model_name_or_path,
+                                        max_doc_length = args.max_doc_length,
                                         from_tf=bool('.ckpt' in args.model_name_or_path),
                                         config=config,
                                         cache_dir=args.cache_dir if args.cache_dir else None)
@@ -861,7 +866,7 @@ def main():
     tr_loss = 0
     if args.do_train:
         cached_train_features_file = args.data_dir + '_{0}_{1}_{2}_{3}_{4}_{5}'.format(
-            list(filter(None, args.model_name_or_path.split('/'))).pop(), "train",str(args.task_name), str(args.max_seq_length),
+            list(filter(None, args.model_name_or_path.split('/'))).pop(), "train",str(args.task_name), str(args.max_doc_length),
             str(args.max_utterance_num), str(args.cache_flag))
         train_features = None
         try:
@@ -869,7 +874,7 @@ def main():
                 train_features = pickle.load(reader)
         except:
             train_features = convert_examples_to_features(
-                train_examples, label_list, args.max_seq_length, args.max_utterance_num, tokenizer, output_mode)
+                train_examples, label_list, args.max_doc_length, args.max_opt_length, args.max_utterance_num, tokenizer, output_mode)
             if args.local_rank == -1 or torch.distributed.get_rank() == 0:
                 logger.info("  Saving train features into cached file %s", cached_train_features_file)
                 with open(cached_train_features_file, "wb") as writer:
@@ -903,7 +908,7 @@ def main():
 
         eval_examples = processor.get_dev_examples(args.data_dir)
         cached_train_features_file = args.data_dir + '_{0}_{1}_{2}_{3}_{4}_{5}'.format(
-            list(filter(None, args.model_name_or_path.split('/'))).pop(), "valid",str(args.task_name), str(args.max_seq_length),
+            list(filter(None, args.model_name_or_path.split('/'))).pop(), "valid",str(args.task_name), str(args.max_doc_length),
             str(args.max_utterance_num), str(args.cache_flag))
         eval_features = None
         try:
@@ -911,7 +916,7 @@ def main():
                 eval_features = pickle.load(reader)
         except:
             eval_features = convert_examples_to_features(
-                eval_examples, label_list, args.max_seq_length, args.max_utterance_num, tokenizer, output_mode)
+                eval_examples, label_list, args.max_doc_length, args.max_opt_length, args.max_utterance_num, tokenizer, output_mode)
             if args.local_rank == -1 or torch.distributed.get_rank() == 0:
                 logger.info("  Saving eval features into cached file %s", cached_train_features_file)
                 with open(cached_train_features_file, "wb") as writer:

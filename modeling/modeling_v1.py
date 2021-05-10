@@ -5,6 +5,7 @@ from torch.nn import CrossEntropyLoss, MSELoss, BCEWithLogitsLoss, Conv1d
 import torch.nn.functional as F
 import math
 import torch.nn.utils.rnn as rnn_utils
+from torch.nn import init
 
 BertLayerNorm = torch.nn.LayerNorm
 
@@ -131,13 +132,71 @@ class FuseLayer(nn.Module):
         return fuse_prob * input1 + (1 - fuse_prob) * input2
 
 
+class TriLinear(nn.Module):
+
+    def __init__(self, input_size):
+        super(TriLinear, self).__init__()
+        self.w1 = nn.Parameter(torch.FloatTensor(1, input_size))
+        self.w2 = nn.Parameter(torch.FloatTensor(1, input_size))
+        self.w3 = nn.Parameter(torch.FloatTensor(1, input_size))
+
+        self.init_param()
+
+    def forward(self, query, key):
+        ndim = query.dim()
+        q_logit = F.linear(query, self.w1)
+        k_logit = F.linear(key, self.w2)
+
+        shape = [1] * (ndim - 1) + [-1]
+        dot_k = self.w3.view(shape) * key
+        dot_logit = torch.matmul(query, torch.transpose(dot_k, -1, -2))
+
+        logit = q_logit + torch.transpose(k_logit, -1, -2) + dot_logit
+        return logit
+
+    def init_param(self):
+        init.normal_(self.w1, 0., 0.02)
+        init.normal_(self.w2, 0., 0.02)
+        init.normal_(self.w3, 0., 0.02)
+
+
+class Attention(nn.Module):
+
+    def __init__(self, sim):
+        super(Attention, self).__init__()
+        self.sim = sim
+
+    def forward(self, query, key, value, query_mask=None, key_mask=None):
+        ndim = query.dim()
+        logit = self.sim(query, key)
+        if query_mask is not None and key_mask is not None:
+            mask = query_mask.unsqueeze(ndim - 1) * key_mask.unsqueeze(ndim - 2)
+            logit = logit.masked_fill(~mask, -float('inf'))
+
+        attn_weight = F.softmax(logit, dim=-1)
+        if query_mask is not None and key_mask is not None:
+            attn_weight = attn_weight.masked_fill(~mask, 0.)
+
+        attn = torch.matmul(attn_weight, value)
+
+        kq_weight = F.softmax(logit, dim=1)
+        if query_mask is not None and key_mask is not None:
+            kq_weight = kq_weight.masked_fill(~mask, 0.)
+
+        co_weight = torch.matmul(attn_weight, torch.transpose(kq_weight, -1, -2))
+        co_attn = torch.matmul(co_weight, query)
+
+        return (attn, attn_weight), (co_attn, co_weight)
+
+
 class ElectraForMultipleChoicePlus(ElectraPreTrainedModel):
-    def __init__(self, config, num_rnn = 1, num_decoupling = 1):
+    def __init__(self, config, max_doc_length, num_rnn = 1, num_decoupling = 1):
         super().__init__(config)
 
         self.electra = ElectraModel(config)
         self.num_decoupling = num_decoupling
-
+        self.max_doc_len = max_doc_length
+        self.hidden_size = config.hidden_size
         self.localMHA = nn.ModuleList([MHA(config) for _ in range(num_decoupling)])
         self.globalMHA = nn.ModuleList([MHA(config) for _ in range(num_decoupling)])
         self.SASelfMHA = nn.ModuleList([MHA(config) for _ in range(num_decoupling)])
@@ -148,14 +207,30 @@ class ElectraForMultipleChoicePlus(ElectraPreTrainedModel):
         
         self.gru1 = GRUWithPadding(config, num_rnn)
         self.gru2 = GRUWithPadding(config, num_rnn)
+        self.gru3 = GRUWithPadding(config, num_rnn)
 
-        self.pooler = nn.Linear(4 * config.hidden_size, config.hidden_size)
+        self.pooler = nn.Linear(5 * config.hidden_size, config.hidden_size)
         self.pooler_activation = nn.Tanh()
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
         self.classifier = nn.Linear(config.hidden_size, 1)
         self.classifier2 = nn.Linear(config.hidden_size, 2)
 
         self.init_weights()
+
+        # OCN
+        self.attn_sim = TriLinear(config.hidden_size)
+        self.attention = Attention(sim=self.attn_sim)
+        self.attn_fc = nn.Linear(config.hidden_size * 3, config.hidden_size, bias=True)
+
+        self.opt_attn_sim = TriLinear(config.hidden_size)
+        self.opt_attention = Attention(sim=self.opt_attn_sim)
+        self.comp_fc = nn.Linear(config.hidden_size * 7, config.hidden_size, bias=True)
+
+        self.gate_fc = self.gate_fc = nn.Linear(config.hidden_size * 2, config.hidden_size, bias=True)
+
+        self.opt_selfattn_sim = TriLinear(config.hidden_size)
+        self.opt_self_attention = Attention(sim=self.opt_selfattn_sim)
+        self.opt_selfattn_fc = nn.Linear(config.hidden_size * 4, config.hidden_size, bias=True)
 
     def forward(
         self,
@@ -192,13 +267,13 @@ class ElectraForMultipleChoicePlus(ElectraPreTrainedModel):
         )
         
         #print("size of sequence_output:", sequence_output.size())
-        attention_mask = attention_mask.unsqueeze(1).unsqueeze(2) # (batch_size * num_choice, 1, 1, seq_len)
-        attention_mask = attention_mask.to(dtype=self.dtype)  # fp16 compatibility
+        MDFN_attention_mask = attention_mask.unsqueeze(1).unsqueeze(2) # (batch_size * num_choice, 1, 1, seq_len)
+        MDFN_attention_mask = MDFN_attention_mask.to(dtype=self.dtype)  # fp16 compatibility
         
         # (batch_size * num_choice, 1, 1, seq_len)
 
-        local_mask = torch.zeros_like(attention_mask, dtype = self.dtype)
-        local_mask = local_mask.repeat((1,1,attention_mask.size(-1), 1)) #(batch_size * num_choice, 1, seq_len, seq_len)
+        local_mask = torch.zeros_like(MDFN_attention_mask, dtype = self.dtype)
+        local_mask = local_mask.repeat((1,1,MDFN_attention_mask.size(-1), 1)) #(batch_size * num_choice, 1, seq_len, seq_len)
         global_mask = torch.zeros_like(local_mask, dtype = self.dtype)
         sa_self_mask = torch.zeros_like(local_mask, dtype = self.dtype)
         sa_cross_mask = torch.zeros_like(local_mask, dtype = self.dtype)
@@ -223,7 +298,7 @@ class ElectraForMultipleChoicePlus(ElectraPreTrainedModel):
             global_mask[i, 0, :, :(sep_pos[i][last_sep] + 1)] = 1.0 - local_mask[i, 0, :, :(sep_pos[i][last_sep] + 1)]
             sa_cross_mask[i, 0, :, :(sep_pos[i][last_sep] + 1)] = 1.0 - sa_self_mask[i, 0, :, :(sep_pos[i][last_sep] + 1)]
 
-        attention_mask = (1.0 - attention_mask) * -10000.0
+        MDFN_attention_mask = (1.0 - MDFN_attention_mask) * -10000.0
         local_mask = (1.0 - local_mask) * -10000.0
         global_mask = (1.0 - global_mask) * -10000.0
         sa_self_mask = (1.0 - sa_self_mask) * -10000.0
@@ -231,7 +306,7 @@ class ElectraForMultipleChoicePlus(ElectraPreTrainedModel):
 
         outputs = self.electra(
             input_ids,
-            attention_mask=attention_mask.squeeze(1),
+            attention_mask=MDFN_attention_mask.squeeze(1),
             token_type_ids=token_type_ids,
             position_ids=position_ids,
             head_mask=head_mask,
@@ -241,8 +316,59 @@ class ElectraForMultipleChoicePlus(ElectraPreTrainedModel):
         )
 
         sequence_output = outputs[0] # (batch_size * num_choice, seq_len, hidden_size)
+        # OCN
+        doc_enc = sequence_output[:, 0: self.max_doc_len + 1, :]
+        opt_enc = sequence_output[:, self.max_doc_len + 1:, :]
+        opt_total_len = opt_enc.size(1)
+        opt_mask = attention_mask[:, self.max_doc_len + 1:] > 0
+        doc_mask = attention_mask[:, 0: self.max_doc_len + 1] > 0
 
+        opt_mask = opt_mask.view(-1, num_labels, opt_total_len)
+        opt_enc = opt_enc.view(-1, num_labels, opt_total_len, self.hidden_size)
 
+        correlation_list = []
+        for i in range(num_labels):
+            cur_opt = opt_enc[:, i, :, :]
+            cur_mask = opt_mask[:, i, :]
+
+            comp_info = []
+            for j in range(num_labels):
+                if j == i:
+                    continue
+
+                tmp_opt = opt_enc[:, j, :, :]
+                tmp_mask = opt_mask[:, j, :]
+
+                (attn, _), _ = self.opt_attention(cur_opt, tmp_opt, tmp_opt, cur_mask, tmp_mask)
+                comp_info.append(cur_opt * attn)
+                comp_info.append(cur_opt - attn)
+
+            correlation = torch.tanh(self.comp_fc(torch.cat([cur_opt] + comp_info, dim=-1)))
+            correlation_list.append(correlation)
+
+        correlation_list = [correlation.unsqueeze(1) for correlation in correlation_list]
+        opt_correlation = torch.cat(correlation_list, dim=1)
+
+        opt_mask = opt_mask.view(-1, opt_total_len)
+        opt_enc = opt_enc.view(-1, opt_total_len, self.hidden_size)
+        opt_correlation = opt_correlation.contiguous().view(-1, opt_total_len, self.hidden_size)
+        gate = torch.sigmoid(self.gate_fc(torch.cat((opt_enc, opt_correlation), -1)))
+        option = opt_enc * gate + opt_correlation * (1.0 - gate)
+
+        (attn, _), (coattn, _) = self.attention(option, doc_enc, doc_enc, opt_mask, doc_mask)
+        fusion = self.attn_fc(torch.cat((option, attn, coattn), -1))
+        fusion = F.relu(fusion)
+
+        (attn, _), _ = self.opt_self_attention(fusion, fusion, fusion, opt_mask, opt_mask)
+        fusion = self.opt_selfattn_fc(torch.cat((fusion, attn, fusion * attn, fusion - attn), -1))
+        fusion = F.relu(fusion)
+
+        fusion = fusion.masked_fill(
+            ~opt_mask.unsqueeze(-1).expand(-1, opt_total_len, self.hidden_size),
+            -float('inf'))
+        option_final_states, _ = fusion.max(dim=1)
+
+        # MDFN
         local_word_level = self.localMHA[0](sequence_output, sequence_output, attention_mask = local_mask)[0]
         global_word_level = self.globalMHA[0](sequence_output, sequence_output, attention_mask = global_mask)[0]
         sa_self_word_level = self.SASelfMHA[0](sequence_output, sequence_output, attention_mask = sa_self_mask)[0]
@@ -278,7 +404,7 @@ class ElectraForMultipleChoicePlus(ElectraPreTrainedModel):
         context_final_states = self.gru1(context_utterance_level) 
         sa_final_states = self.gru2(sa_utterance_level) # (batch_size * num_choice, 2 * hidden_size)
         
-        final_state = torch.cat((context_final_states, sa_final_states), 1)
+        final_state = torch.cat((context_final_states, sa_final_states, option_final_states), 1)
 
         pooled_output = self.pooler_activation(self.pooler(final_state))
         pooled_output = self.dropout(pooled_output)
