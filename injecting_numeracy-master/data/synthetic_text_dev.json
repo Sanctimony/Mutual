@@ -1,0 +1,226 @@
+{
+    "history_0": {
+        "passage": "There were 18167 African American troops and 6 native groups in the city . There were 4 foreign groups and 18249 Japanese people in the city . The commander lost 5942 of the Polish troops .",
+        "qa_pairs": [
+            {
+                "question_id": "history_0_0",
+                "domain": "history",
+                "generator": "intra_entity_simple_diff",
+                "question": "How many more African American troops were in the city than native groups ?",
+                "answer": 18161,
+                "expression": [
+                    18167,
+                    -6
+                ]
+            },
+            {
+                "question_id": "history_0_1",
+                "domain": "history",
+                "generator": "intra_entity_simple_diff",
+                "question": "How many more African American troops were in the city than foreign groups ?",
+                "answer": 18163,
+                "expression": [
+                    18167,
+                    -4
+                ]
+            },
+            {
+                "question_id": "history_0_2",
+                "domain": "history",
+                "generator": "intra_entity_simple_diff",
+                "question": "How many more Japanese people were in the city than African American troops ?",
+                "answer": 82,
+                "expression": [
+                    18249,
+                    -18167
+                ]
+            },
+            {
+                "question_id": "history_0_3",
+                "domain": "history",
+                "generator": "intra_entity_simple_diff",
+                "question": "How many more native groups were in the city than foreign groups ?",
+                "answer": 2,
+                "expression": [
+                    6,
+                    -4
+                ]
+            },
+            {
+                "question_id": "history_0_4",
+                "domain": "history",
+                "generator": "intra_entity_simple_diff",
+                "question": "How many more Japanese people were in the city than native groups ?",
+                "answer": 18243,
+                "expression": [
+                    18249,
+                    -6
+                ]
+            },
+            {
+                "question_id": "history_0_5",
+                "domain": "history",
+                "generator": "intra_entity_simple_diff",
+                "question": "How many more Japanese people were in the city than foreign groups ?",
+                "answer": 18245,
+                "expression": [
+                    18249,
+                    -4
+                ]
+            },
+            {
+                "question_id": "history_0_6",
+                "domain": "history",
+                "generator": "intra_entity_subset",
+                "question": "How many groups of the city were native groups ?",
+                "answer": 6,
+                "expression": [
+                    6
+                ]
+            },
+            {
+                "question_id": "history_0_7",
+                "domain": "history",
+                "generator": "intra_entity_subset",
+                "question": "How many groups of the city were not native groups ?",
+                "answer": 4,
+                "expression": [
+                    10,
+                    -6
+                ]
+            },
+            {
+                "question_id": "history_0_8",
+                "domain": "history",
+                "generator": "intra_entity_subset",
+                "question": "How many groups of the city were foreign groups ?",
+                "answer": 4,
+                "expression": [
+                    4
+                ]
+            },
+            {
+                "question_id": "history_0_9",
+                "domain": "history",
+                "generator": "intra_entity_subset",
+                "question": "How many groups of the city were not foreign groups ?",
+                "answer": 6,
+                "expression": [
+                    10,
+                    -4
+                ]
+            }
+        ]
+    },
+    "history_1": {
+        "passage": "The householder had 15984 Chinese people , the commander had 6367 Chinese people , and the military had 37 Chinese people . There were 1548 urban families and 5457 Italian people in battle . The householder recruited 64 Chinese families and 15319 Spanish people . There were 1232 English families and 5773 Chinese people in battle . The military borrowed 1605 Irish families from the king .",
+        "qa_pairs": [
+            {
+                "question_id": "history_1_0",
+                "domain": "history",
+                "generator": "select",
+                "question": "How many Chinese people did the householder recruited ?",
+                "answer": 15984,
+                "expression": [
+                    15984
+                ]
+            },
+            {
+                "question_id": "history_1_1",
+                "domain": "history",
+                "generator": "select",
+                "question": "How many Chinese families did the householder recruited ?",
+                "answer": 64,
+                "expression": [
+                    64
+                ]
+            },
+            {
+                "question_id": "history_1_2",
+                "domain": "history",
+                "generator": "select",
+                "question": "How many Spanish people did the householder recruited ?",
+                "answer": 15319,
+                "expression": [
+                    15319
+                ]
+            },
+            {
+                "question_id": "history_1_3",
+                "domain": "history",
+                "generator": "select",
+                "question": "How many urban families did the commander recruited ?",
+                "answer": 1548,
+                "expression": [
+                    1548
+                ]
+            },
+            {
+                "question_id": "history_1_4",
+                "domain": "history",
+                "generator": "select",
+                "question": "How many Italian people did the commander recruited ?",
+                "answer": 5457,
+                "expression": [
+                    5457
+                ]
+            },
+            {
+                "question_id": "history_1_5",
+                "domain": "history",
+                "generator": "select",
+                "question": "How many English families did the commander recruited ?",
+                "answer": 1232,
+                "expression": [
+                    1232
+                ]
+            }
+        ]
+    },
+    "nfl_0": {
+        "passage": "Janikowski got 3 embarrassing losses in the second half . Lions fired 3 embarrassing losses in the second half . There were 2 embarrassing losses in Miami . 7 field goals , 5 impressive wins , and 3 embarrassing losses were got in Miami . Janikowski nailed 7 field goals and Brady nailed 2 field goals .",
+        "qa_pairs": [
+            {
+                "question_id": "nfl_0_0",
+                "domain": "nfl",
+                "generator": "select",
+                "question": "How many embarrassing losses did Janikowski got ?",
+                "answer": 3,
+                "expression": [
+                    3
+                ]
+            },
+            {
+                "question_id": "nfl_0_1",
+                "domain": "nfl",
+                "generator": "select",
+                "question": "How many field goals did Janikowski got ?",
+                "answer": 7,
+                "expression": [
+                    7
+                ]
+            },
+            {
+                "question_id": "nfl_0_2",
+                "domain": "nfl",
+                "generator": "select",
+                "question": "How many embarrassing losses were in the second half ?",
+                "answer": 6,
+                "expression": [
+                    3,
+                    3
+                ]
+            },
+            {
+                "question_id": "nfl_0_3",
+                "domain": "nfl",
+                "generator": "select",
+                "question": "How many embarrassing losses did Lions nailed ?",
+                "answer": 3,
+                "expression": [
+                    3
+                ]
+            }
+        ]
+    }
+}

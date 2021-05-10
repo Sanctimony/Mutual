@@ -1,0 +1,5 @@
+eval_acc = 0.0	eval_dec_err_sum = 3.4	eval_err = 1.0	eval_loss = 6.766422430674235	n_train = 665	
+eval_acc = 0.0	eval_dec_err_sum = 2.85	eval_err = 1.0	eval_loss = 5.397796630859375	n_train = 665	
+eval_acc = 0.1	eval_dec_err_sum = 2.85	eval_err = 0.9	eval_loss = 4.96003786722819	n_train = 665	
+eval_acc = 0.0	eval_dec_err_sum = 2.85	eval_err = 1.0	eval_loss = 4.827203830083211	n_train = 665	
+eval_acc = 0.05	eval_dec_err_sum = 3.1	eval_err = 0.95	eval_loss = 5.08789046605428	n_train = 665	
