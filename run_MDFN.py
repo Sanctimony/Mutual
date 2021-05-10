@@ -39,19 +39,23 @@ from sklearn.metrics import matthews_corrcoef, f1_score
 
 from transformers import (BertConfig, BertForMultipleChoice, BertTokenizer,
                             ElectraConfig, ElectraTokenizer, RobertaConfig, RobertaTokenizer, RobertaForMultipleChoice)
-from modeling import (ElectraForMultipleChoicePlus, Baseline, BertBaseline, RobertaBaseline, BertForMultipleChoicePlus, RobertaForMultipleChoicePlus)
+from modeling import (ElectraForMultipleChoicePlus, Baseline, BertBaseline, RobertaBaseline, BertForMultipleChoicePlus, RobertaForMultipleChoicePlus, ELectra_MC_Plus_PhraseAttention)
 from transformers import (AdamW, WEIGHTS_NAME, CONFIG_NAME)
 import re
 import os
 
 logger = logging.getLogger(__name__)
 
+# MODEL_CLASSES = {
+#     'bert': (BertConfig, BertForMultipleChoicePlus, BertTokenizer),
+#     'roberta': (RobertaConfig, RobertaForMultipleChoicePlus, RobertaTokenizer),
+#         'electra': (ElectraConfig, ElectraForMultipleChoicePlus, ElectraTokenizer)
+# }
 MODEL_CLASSES = {
     'bert': (BertConfig, BertForMultipleChoicePlus, BertTokenizer),
     'roberta': (RobertaConfig, RobertaForMultipleChoicePlus, RobertaTokenizer),
-    'electra': (ElectraConfig, ElectraForMultipleChoicePlus, ElectraTokenizer)
+        'electra': (ElectraConfig, ELectra_MC_Plus_PhraseAttention, ElectraTokenizer)
 }
-
 def select_field(features, field):
     return [
         [
@@ -595,12 +599,6 @@ def compute_metrics(task_name, preds, labels):
     else:
         raise KeyError(task_name)
 
-def get_file_id(example_id):
-    start = example_id.index('dev_')
-    end = example_id.index('.', start)
-    file_id = example_id[start + 4: end]
-    return int(file_id)
-
 
 def main():
     parser = argparse.ArgumentParser()
@@ -931,8 +929,7 @@ def main():
         elif output_mode == "regression":
             all_label_ids = torch.tensor([f.label for f in eval_features], dtype=torch.float)
 
-        all_file_ids = torch.tensor([get_file_id(f.example_id) for f in eval_features], dtype=torch.long)
-        eval_data = TensorDataset(all_input_ids, all_input_mask, all_segment_ids, all_sep_pos, all_turn_ids, all_label_ids, all_file_ids)
+        eval_data = TensorDataset(all_input_ids, all_input_mask, all_segment_ids, all_sep_pos, all_turn_ids, all_label_ids)
         # Run prediction for full data
 
         eval_sampler = SequentialSampler(eval_data)
@@ -992,7 +989,7 @@ def main():
             output_model_file = os.path.join(args.output_dir, str(epoch) + "_" + WEIGHTS_NAME)
             output_config_file = os.path.join(args.output_dir, CONFIG_NAME)
 
-            # torch.save(model_to_save.state_dict(), output_model_file)
+            torch.save(model_to_save.state_dict(), output_model_file)
             model_to_save.config.to_json_file(output_config_file)
             tokenizer.save_vocabulary(args.output_dir)
 
@@ -1021,26 +1018,13 @@ def main():
                 if preds is None:
                     preds = logits.detach().cpu().numpy()
                     out_label_ids = inputs['labels'].detach().cpu().numpy()
-                    file_ids = batch[6].detach().cpu().numpy()
                 else:
                     preds = np.append(preds, logits.detach().cpu().numpy(), axis=0)
                     out_label_ids = np.append(out_label_ids, inputs['labels'].detach().cpu().numpy(), axis=0)
-                    file_ids = np.append(file_ids, batch[6].detach().cpu().numpy(), axis=0)
 
             eval_loss = eval_loss / nb_eval_steps
             
             result = compute_metrics(task_name, preds, out_label_ids)
-            if preds.shape[1] == 1:
-                preds_class = np.ones(preds.shape)
-                preds_class[preds < 0] = 0
-            else:
-                preds_class = np.argmax(preds, axis=1)
-            prediction = np.append(file_ids, preds_class)
-            prediction = np.append(prediction, out_label_ids)
-            prediction = prediction.reshape(3, -1).T
-            prediction_output_file = os.path.join(args.output_dir, "prediction_" + str(epoch) + ".npy")
-            np.save(prediction_output_file, prediction)
-
             loss = tr_loss / nb_tr_steps if args.do_train else None
 
             result['eval_loss'] = eval_loss
